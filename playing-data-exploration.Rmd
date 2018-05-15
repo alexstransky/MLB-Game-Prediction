@@ -1,0 +1,182 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+### Load Data (master = IDs and handedness)
+
+```{r}
+setwd("~/R/Baseball Project")
+players.2017 <- read.csv("playing-2017.csv")
+teams.2017 <- read.csv("teams-2017.csv")
+```
+
+```{r}
+setwd("~/R/Baseball Gambling")
+master <- read.csv("master.csv")
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+```
+
+```{r}
+master <- master %>%
+  select(retro_name, retro_id, debut, mlb_pos, bats, throws) %>%
+  mutate(retro_id = as.character(retro_id))
+```
+
+### FIP constant
+
+```{r}
+fip.2017 <- with(players.2017, sum(P_ER*9) / (sum(P_OUT / 3)) - ((13 * sum(P_HR)) + (3 * (sum(P_BB) + sum(P_HP))) - (2 * sum(P_SO))) / (sum(P_OUT) / 3))
+```
+
+### Pitcher Analysis
+
+```{r}
+pitchers.2017 <- players.2017 %>%
+  filter(P_G == 1,
+         season.phase == "R") %>%
+  select(game.key, game.date, team.alignment, team.key, opponent.key, person.key, P_G, P_GS, P_CG, P_OUT, P_TBF, P_AB, P_R, P_ER, P_H, P_TB, P_HR, P_BB, P_SO, P_GDP, P_HP, P_IR, P_IRS, P_GO, P_AO, P_PITCH, P_STRIKE)
+```
+
+```{r}
+pitchers.2017 <- mutate(group_by(pitchers.2017, person.key), 
+        S_OUT = cumsum(P_OUT),
+        S_R = cumsum(P_R),
+        S_ER = cumsum(P_ER),
+        S_H = cumsum(P_H),
+        S_HR = cumsum(P_HR),
+        S_BB = cumsum(P_BB),
+        S_SO = cumsum(P_SO),
+        S_HP = cumsum(P_HP),
+        S_IR = cumsum(P_IR),
+        S_IRS = cumsum(P_IRS),
+        S_GO = cumsum(P_GO),
+        S_AO = cumsum(P_AO))
+```
+
+```{r}
+pitchers.2017 %>%
+  filter(person.key == "salec001")
+```
+
+### SP Predictor Variables
+
+```{r}
+greinke.id <- as.character(select(filter(master, retro_name == "Zack Greinke"), retro_id))
+greinke.2017 <- pitchers.2017 %>%
+  filter(person.key == greinke.id) %>%
+  mutate(
+    FIP = (13 * S_HR + 3 * (S_BB + S_HP) - 2 * S_SO) / (S_OUT / 3) + fip.2017,
+    K9 = S_SO * 9 / (S_OUT / 3),
+    B9 = S_BB * 9 / (S_OUT / 3),
+    HR9 = S_HR * 9 / (S_OUT / 3),
+    LOB = (S_H + S_BB + S_HP - S_R) / (S_H + S_BB + S_HP - 1.4 * S_HR),
+    WHIP = (S_H + S_BB) / (S_OUT / 3),
+    IRSP = S_IRS / S_IR
+  )
+greinke.2017
+```
+
+### Team Relief Pitching
+
+```{r}
+arirelief.raw.2017 <- pitchers.2017 %>%
+  filter(
+    P_GS == 0,
+    team.key == "ARI"
+  )
+arirelief.raw.2017 %>%
+  arrange(game.date) %>%
+  select(game.date, team.key, person.key, P_OUT, P_TBF, P_ER, P_H, P_HR, P_BB, P_SO, P_IR, P_IRS)
+```
+
+
+```{r}
+arirelief.2017 <- players.2017 %>%
+  filter(
+    P_G == 1,
+    P_GS == 0,
+    team.key == "ARI"
+  ) %>%
+  group_by(game.key) %>%
+  summarise(
+    game.date = unique(game.date),
+    team.alignment = unique(team.alignment),
+    team.key = unique(team.key),
+    opponent.key = unique(opponent.key),
+    S_OUT = sum(P_OUT),
+    S_R = sum(P_R),
+    S_ER = sum(P_ER),
+    S_H = sum(P_H),
+    S_HR = sum(P_HR),
+    S_BB = sum(P_BB),
+    S_SO = sum(P_SO),
+    S_HP = sum(P_HP),
+    S_IR = sum(P_IR),
+    S_IRS = sum(P_IRS),
+    S_GO = sum(P_GO),
+    S_AO = sum(P_AO)
+  ) %>%
+  mutate(
+    FIP = (13 * S_HR + 3 * (S_BB + S_HP) - 2 * S_SO) / (S_OUT / 3) + fip.2017,
+    K9 = S_SO * 9 / (S_OUT / 3),
+    B9 = S_BB * 9 / (S_OUT / 3),
+    HR9 = S_HR * 9 / (S_OUT / 3),
+    LOB = (S_H + S_BB + S_HP - S_R) / (S_H + S_BB + S_HP - 1.4 * S_HR),
+    WHIP = (S_H + S_BB) / (S_OUT / 3),
+    IRSP = S_IRS / S_IR
+  ) %>%
+  arrange(game.date)
+arirelief.2017
+```
+
+### Runs scored in 2017
+
+```{r}
+rs.2017 <- teams.2017 %>%
+  group_by(game.key) %>%
+  summarise(
+    rs = sum(B_R)
+  )
+ggplot(rs.2017, aes(x = rs)) +
+  geom_histogram()
+```
+
+```{r}
+setwd("~/R")
+source("fteplots.R")
+```
+
+```{r}
+ggplot(teams.2017, aes(x = B_R)) +
+  geom_histogram(binwidth = 1, fill = ) +
+  ggtitle("Distribution of Runs per Game 2017") +
+  xlab("Runs Scored") + ylab("Count") +
+  fte
+```
+
+
+```{r}
+mean(rs.2017$rs)
+```
+
+
+```{r}
+rs.2017.sum <- rs.2017 %>%
+  group_by(rs) %>%
+  summarise(n = n()) %>%
+  mutate(rsp = round(n * 100 / sum(n), 2))
+rs.2017.sum
+```
+
+```{r}
+
+```
+
+
+
+
