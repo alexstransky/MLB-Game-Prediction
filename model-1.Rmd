@@ -1,0 +1,446 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+## Load Data
+
+```{r}
+setwd("~/R/Baseball Project")
+comp.2013 <- read.csv("comp-2013.csv")
+comp.2014 <- read.csv("comp-2014.csv")
+comp.2015 <- read.csv("comp-2015.csv")
+comp.2016 <- read.csv("comp-2016.csv")
+comp.2017 <- read.csv("comp-2017.csv")
+```
+
+```{r}
+all.data <- rbind(comp.2013, comp.2014, comp.2015, comp.2016, comp.2017)
+length(unique(all.data$game.key))
+```
+
+```{r}
+home.data <- filter(all.data, all.data$team.alignment == 1)
+road.data <- filter(all.data, all.data$team.alignment == 0)
+```
+
+## Home
+
+### Initial Modeling
+
+```{r}
+hfm00 <- glm(B_R ~ HR.G + LHR.G + R.G + LR.G + BBP + LBBP + KP + LKP + OPS + LOPS + PF_R + PF_HR + FIP + WHIP + K9 + BB9 + HR9 + BPFIP + BPWHIP + BPK9 + BPBB9 + BPHR9 + BPIRS, data = home.data, family = "poisson")
+summary(hfm00)
+```
+
+```{r}
+plot(hfm00)
+```
+
+```{r}
+AIC(hfm00)
+Metrics::rmse(home.data$B_R, predict(hfm00, home.data))
+```
+
+
+```{r}
+poisson.home.rs <- glm(B_R ~ LHR.G + BBP + LKP + OPS + LOPS + PF_R + PF_HR + FIP + WHIP + BB9 + HR9, data = home.data, family = "poisson")
+summary(poisson.home.rs)
+```
+
+Model performed slightly better but not much better. Might be better to try a linear model in a moment.
+
+```{r}
+AIC(hfm01)
+Metrics::rmse(home.data$B_R, predict(hfm01, home.data))
+```
+
+```{r}
+# install.packages("AER")
+AER::dispersiontest(hfm01, trafo = 1)
+```
+The test here uses a null hypothesis that the coefficient of dispersion is equal to zero. p-value less than 0.05 indicates that we reject the null hypothesis and need to account for overdispersion.
+
+```{r}
+hfm02 <- glm(B_R ~ R.G * FIP + R.G * BPFIP + BBP * BB9 + BBP * BPBB9 + KP * K9 + KP * BPK9 + HR.G * HR9 + HR.G * BPHR9 + OPS + WHIP + BPWHIP, data = home.data, family = "poisson")
+summary(hfm02)
+```
+
+Model with all of the intuitive interaction terms performs much worse (AIC = 54953).
+
+Let's try a linear model.
+
+```{r}
+AIC(hfm02)
+Metrics::rmse(home.data$B_R, predict(hfm02, home.data))
+```
+
+```{r}
+hfm03 <- lm(B_R ~ HR.G + LHR.G + R.G + LR.G + BBP + LBBP + KP + LKP + OPS + LOPS + PF_R + PF_HR + FIP + WHIP + K9 + BB9 + HR9 + BPFIP + BPWHIP + BPK9 + BPBB9 + BPHR9 + BPIRS, data = home.data)
+summary(hfm03)
+```
+
+```{r}
+AIC(hfm03)
+Metrics::rmse(home.data$B_R, predict(hfm03, home.data))
+```
+
+Seems to perform slightly better than the previous model, but still with a very low R-squared value. Let's try the linear model with the interaction terms to see if anything changes.
+
+```{r}
+hfm04 <- lm(B_R ~ R.G * FIP + R.G * BPFIP + BBP * BB9 + BBP * BPBB9 + KP * K9 + KP * BPK9 + HR.G * HR9 + HR.G * BPHR9 + OPS + WHIP + BPWHIP + PF_R + PF_HR, data = home.data)
+summary(hfm04)
+```
+
+```{r}
+AIC(hfm04)
+Metrics::rmse(home.data$B_R, predict(hfm04, home.data))
+```
+
+Again, the model with interaction terms is much worse. What if we take out the insignificant interaction terms.
+
+```{r}
+hfm05 <- lm(B_R ~ FIP + BBP * BB9 + BBP * BPBB9 + HR9 + OPS + WHIP + PF_R * R.G  + PF_HR * HR.G, data = home.data)
+summary(hfm05)
+```
+
+```{r}
+AIC(hfm05)
+Metrics::rmse(home.data$B_R, predict(hfm05, home.data))
+```
+
+Still bad.
+
+```{r}
+# Condensed version of hfm02
+hfm06 <- glm(B_R ~ R.G + FIP + BBP * BB9 + BBP * BPBB9 + HR.G + HR9 + WHIP, data = home.data, family = "poisson")
+summary(hfm06)
+```
+
+```{r}
+AIC(hfm06)
+Metrics::rmse(home.data$B_R, predict(hfm06, home.data))
+```
+
+```{r}
+linear.home.rs <- lm(B_R ~ LHR.G + BBP + LKP + LOPS + PF_R + PF_HR + FIP + WHIP + BB9 + HR9, data = home.data)
+summary(lin.home.rs)
+```
+
+```{r}
+AIC(hfm07)
+Metrics::rmse(home.data$B_R, predict(hfm07, home.data))
+```
+
+
+### Random Effects Modeling
+
+```{r}
+library(lme4)
+```
+
+```{r}
+poissonre.home.rs <- glmer(B_R ~ LHR.G + BBP + LKP + OPS + LOPS + PF_R + PF_HR + FIP + WHIP + BB9 + HR9 + (1 | person.key), data = home.data, family = "poisson")
+summary(poissonre.home.rs)
+```
+
+Does scaling help?
+
+```{r}
+AIC(hfm01.re)
+Metrics::rmse(home.data$B_R, predict(hfm01.re, home.data))
+```
+
+```{r}
+home.data.scaled <- home.data
+home.data.scaled[, c(10:19, 23:24, 26:36)] <- scale(home.data[, c(10:19, 23:24, 26:36)])
+```
+
+```{r}
+hfm01.re2 <- glmer(B_R ~ LHR.G + BBP + LKP + OPS + LOPS + PF_R + PF_HR + FIP + WHIP + BB9 + HR9 + (1 | person.key), data = home.data.scaled, family = "poisson")
+summary(hfm01.re2)
+```
+
+```{r}
+AIC(hfm01.re2)
+Metrics::rmse(home.data$B_R, predict(hfm01.re2, home.data.scaled))
+```
+
+Scaling the data does not make a difference.
+
+```{r}
+hfm01.re3 <- glmer(B_R ~ LHR.G + BBP + LKP + OPS + LOPS + PF_R + PF_HR + FIP + WHIP + BB9 + HR9 + (1 | team.key), data = home.data, family = "poisson")
+summary(hfm01.re3)
+```
+
+```{r}
+AIC(hfm01.re3)
+Metrics::rmse(home.data$B_R, predict(hfm01.re3, home.data))
+```
+
+Team key did not perform as well.
+
+```{r}
+hfm01.re4 <- glmer(B_R ~ LHR.G + BBP + LKP + OPS + LOPS + PF_R + PF_HR + FIP + WHIP + BB9 + HR9 + (1 | game.key), data = home.data.scaled, family = "poisson")
+summary(hfm01.re4)
+```
+
+```{r}
+AIC(hfm01.re4)
+Metrics::rmse(home.data$B_R, predict(hfm01.re4, home.data))
+```
+
+
+### Negative Binomial
+
+```{r}
+nb.home.rs <- MASS::glm.nb(B_R ~ LHR.G + BBP + LKP + OPS + LOPS + PF_R + PF_HR + FIP + WHIP + BB9 + HR9, data = home.data.scaled)
+summary(nb.home.rs)
+```
+
+```{r}
+Metrics::rmse(home.data$B_R, predicted = predict(hfm01.nb1, home.data.scaled))
+```
+
+```{r hfm01.nb2}
+hfm01.nb2 <- glmer.nb(B_R ~ LHR.G + BBP + LKP + OPS + LOPS + PF_R + PF_HR + FIP + WHIP + BB9 + HR9 + (1 | person.key), data = home.data.scaled)
+summary(hfm01.nb2)
+```
+
+Model fails to converge...not sure what we can do about this. Maybe try it without the scaled data (no way that should have an effect though).
+
+Nevermind, finally got it to converge, just had to wait awhile.
+
+```{r}
+AIC(hfm01.nb2)
+Metrics::rmse(home.data$B_R, predicted = predict(hfm01.nb2, home.data.scaled))
+```
+
+
+### Linear Random Effects Modeling
+
+```{r}
+linearre.home.rs <- lmer(B_R ~ LHR.G + BBP + LKP + OPS + LOPS + PF_R + PF_HR + FIP + WHIP + BB9 + HR9 + BPWHIP + (1 | person.key), data = home.data)
+summary(linearre.home.rs)
+```
+
+```{r}
+AIC(hfm03.re1)
+Metrics::rmse(home.data$B_R, predict(hfm03.re1, home.data))
+```
+
+Significantly better RMSE! Should we add more random effects besides just the intercept?
+
+```{r}
+hfm03.re2 <- lmer(B_R ~ LHR.G + BBP + LKP + OPS + LOPS + PF_R + PF_HR + FIP + WHIP + BB9 + HR9 + BPWHIP + (1 + FIP | person.key), data = home.data.scaled)
+summary(hfm03.re2)
+```
+
+```{r}
+AIC(hfm03.re2)
+Metrics::rmse(home.data$B_R, predict(hfm03.re2, home.data))
+```
+
+```{r}
+data.frame(cbind(home.data$B_R, predict(hfm03.re1, home.data)))
+```
+
+
+## Bayes Stuff
+
+```{r}
+library(MCMCpack)
+```
+
+```{r}
+hfm01.ba <- MCMCregress(B_R ~ LHR.G + BBP + LKP + OPS + LOPS + PF_R + PF_HR + FIP + WHIP + BB9 + HR9, mcmc = 6000, data = home.data)
+summary(hfm01.ba)
+```
+
+```{r}
+plot(hfm01.ba, trace = F)[,1]
+```
+
+
+```{r}
+hfm01.ba2 <- MCMCregress(B_R ~ HR.G + LHR.G + R.G + LR.G + BBP + LBBP + KP + LKP + OPS + LOPS + PF_R + PF_HR + FIP + WHIP + K9 + BB9 + HR9 + BPFIP + BPWHIP + BPK9 + BPBB9 + BPHR9 + BPIRS, data = home.data)
+summary(hfm01.ba2)
+```
+
+```{r}
+plot(hfm01.ba2, trace = F)
+```
+
+```{r}
+poisson.ba <- MCMCpoisson(B_R ~ HR.G + LHR.G + R.G + LR.G + BBP + LBBP + KP + LKP + OPS + LOPS + PF_R + PF_HR + FIP + WHIP + K9 + BB9 + HR9 + BPFIP + BPWHIP + BPK9 + BPBB9 + BPHR9 + BPIRS, data = home.data)
+summary(poisson.ba)
+```
+
+```{r}
+poisson.ba2 <- MCMCpoisson(B_R ~ LHR.G + BBP + LKP + OPS + LOPS + PF_R + PF_HR + FIP + WHIP + BB9 + HR9, data = home.data.scaled)
+summary(poisson.ba2)
+```
+
+```{r}
+plot(poisson.ba2, trace = F)
+```
+
+## Road
+### Poisson
+```{r}
+rfm00 <- glm(B_R ~ HR.G + LHR.G + R.G + LR.G + BBP + LBBP + KP + LKP + OPS + LOPS + PF_R + PF_HR + FIP + WHIP + K9 + BB9 + HR9 + BPFIP + BPWHIP + BPK9 + BPBB9 + BPHR9 + BPIRS, data = road.data, family = "poisson")
+summary(rfm00)
+```
+
+
+```{r}
+poisson.road.rs <- glm(B_R ~ HR.G + LHR.G + BBP + LBBP + LKP + OPS + LOPS + PF_R + WHIP + K9 + BPFIP + BPWHIP + BPK9 + BPBB9 + BPHR9 + BPIRS, data = road.data, family = "poisson")
+summary(poisson.road.rs)
+```
+
+```{r}
+AIC(rfm01)
+Metrics::rmse(road.data$B_R, predict(rfm01, road.data))
+```
+
+### Linear
+
+```{r}
+rfm03 <- lm(B_R ~ HR.G + LHR.G + R.G + LR.G + BBP + LBBP + KP + LKP + OPS + LOPS + PF_R + PF_HR + FIP + WHIP + K9 + BB9 + HR9 + BPFIP + BPWHIP + BPK9 + BPBB9 + BPHR9 + BPIRS, data = road.data)
+summary(rfm03)
+```
+
+```{r}
+linear.road.rs <- lm(B_R ~ HR.G + LHR.G + BBP + LKP + LOPS + OPS + PF_R + WHIP + BPWHIP + BPIRS, data = road.data)
+summary(linear.road.rs)
+```
+
+```{r}
+AIC(rfm07)
+Metrics::rmse(road.data$B_R, predict(rfm07, road.data))
+```
+
+### Negative Binomial
+
+
+```{r}
+road.scaled.data <- road.data
+road.scaled.data[, c(10:24, 26:36)] <- scale(road.data[, c(10:24, 26:36)])
+```
+
+```{r}
+road.nb.rs <- MASS::glm.nb(B_R ~ HR.G + LHR.G + BBP  + LKP + OPS + LOPS + PF_R + WHIP + K9 + BPWHIP + BPIRS, data = road.scaled.data)
+summary(road.nb.rs)
+```
+
+```{r}
+Metrics::rmse(road.data$B_R, predicted = predict(rfm01.nb, road.scaled.data))
+```
+
+
+```{r}
+rfm01.nb2 <- lme4::glmer.nb(B_R ~ HR.G + LHR.G + BBP  + LKP + OPS + LOPS + PF_R + WHIP + K9 + BPWHIP + BPIRS + (1 | person.key), data = road.scaled.data)
+summary(rfm01.nb2)
+```
+
+```{r}
+AIC(rfm01.nb2)
+Metrics::rmse(road.data$B_R, predict(rfm01.nb2, road.scaled.data))
+```
+
+### Random Effects Linear
+
+```{r}
+linearre.road.rs <- lmer(B_R ~ HR.G + LHR.G + BBP + LKP + LOPS + OPS + PF_R + WHIP + BPWHIP + BPIRS + (1 | person.key), data = road.data)
+summary(linearre.road.rs)
+```
+
+```{r}
+AIC(rfm03.re1)
+Metrics::rmse(road.data$B_R, predict(rfm03.re1, road.data))
+```
+
+### Random Effects Poisson
+
+```{r hfm01.re}
+rfm01.re1 <- glmer(B_R ~ HR.G + LHR.G + BBP + LBBP + LKP + OPS + LOPS + PF_R + WHIP + K9 + BPFIP + BPWHIP + BPK9 + BPBB9 + BPHR9 + BPIRS + (1 | person.key), data = road.data, family = "poisson")
+summary(rfm01.re1)
+```
+
+```{r}
+AIC(rfm01.re1)
+Metrics::rmse(road.data$B_R, predict(rfm01.re1, road.data))
+```
+
+## Results
+
+```{r}
+home.data$h.poisson <- predict(hfm01, home.data)
+home.data$h.linear <- predict(linear.home.rs, home.data)
+home.data$h.nb <- predict(hfm01.nb1, home.data.scaled)
+home.data$h.nbre <- predict(hfm01.nb2, home.data.scaled)
+home.data$h.poire <- predict(hfm01.re, home.data)
+home.data$h.linre <- predict(hfm03.re1, home.data)
+```
+
+```{r}
+road.data$r.poisson <- predict(rfm01, road.data)
+road.data$r.linear <- predict(linear.road.rs, road.data)
+road.data$r.nb <- predict(rfm01.nb, road.scaled.data)
+road.data$r.nbre <- predict(rfm01.nb2, road.scaled.data)
+road.data$r.poire <- predict(rfm01.re1, road.data)
+road.data$r.linre <- predict(rfm03.re1, road.data)
+```
+
+```{r}
+library(dplyr)
+
+home.data <- rename(
+  home.data,
+  H_R = B_R
+)
+
+road.data <- rename(
+  road.data,
+  R_R = B_R
+)
+```
+
+```{r}
+results <- select(home.data, game.key, game.date, team.key, opponent.key, R_W, H_R, h.poisson, h.linear, h.nb, h.nbre, h.poire, h.linre)
+```
+
+```{r}
+results <- results %>%
+  left_join(select(road.data, game.key, R_R, r.poisson, r.linear, r.nb, r.nbre, r.poire, r.linre), by = "game.key")
+```
+
+```{r}
+results <- results %>%
+  filter(
+    is.na(H_R) == F,
+    is.na(R_R) == F
+  ) %>%
+  mutate(
+    poisson.pred = if_else(h.poisson > r.poisson, 1, 0),
+    linear.pred = if_else(h.linear > r.linear, 1, 0),
+    nb.pred = if_else(h.nb > r.nb, 1, 0),
+    nbre.pred = if_else(h.nbre > r.nbre, 1, 0),
+    poire.pred = if_else(h.poire > r.poire, 1, 0),
+    linre.pred = if_else(h.linre > r.linre, 1, 0)
+  )
+```
+
+```{r}
+results %>%
+  summarise(
+    poisson = mean((R_W == poisson.pred) * 1),
+    linear = mean((R_W == linear.pred) * 1),
+    nb = mean((R_W == nb.pred) * 1),
+    nbre = mean((R_W == nbre.pred) * 1),
+    poire = mean((R_W == poire.pred) * 1),
+    linre = mean((R_W == linre.pred) * 1)
+  )
+```
+
+
