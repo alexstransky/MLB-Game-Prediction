@@ -1,0 +1,145 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+```
+
+```{r}
+setwd("~/R/Baseball Project")
+comp.2013 <- read.csv("comp-2013.csv")
+comp.2014 <- read.csv("comp-2014.csv")
+comp.2015 <- read.csv("comp-2015.csv")
+comp.2016 <- read.csv("comp-2016.csv")
+comp.2017 <- read.csv("comp-2017.csv")
+```
+
+```{r}
+all.data <- rbind(comp.2013, comp.2014, comp.2015, comp.2016, comp.2017)
+length(unique(all.data$game.key))
+```
+
+```{r}
+home.data <- filter(all.data, all.data$team.alignment == 1)
+road.data <- filter(all.data, all.data$team.alignment == 0)
+```
+
+```{r}
+logit.data <- left_join(home.data, road.data[, c(2, 8, 10:36)], by = "game.key")
+logit.data <- filter(logit.data, is.na(B_R.y) == F, is.na(B_R.x) == F)
+logit.regr1 <- logit.data[, c(7, 10:19, 26:36, 38:47, 54:64)]
+```
+
+```{r}
+logit.fm01 <- glm(R_W ~ ., data = logit.regr1, family = binomial(link = "logit"))
+summary(logit.fm01)
+```
+
+```{r}
+logit.wins <- glm(R_W ~ LHR.G.x + BBP.x + KP.x + LOPS.x + WHIP.x + K9.x + HR.G.y + LHR.G.y + BBP.y + KP.y + LKP.y + OPS.y + LOPS.y + WHIP.y + K9.y + BPIRS.y, data = logit.regr1, family = binomial(link = "logit"))
+summary(logit.wins)
+```
+
+```{r}
+AIC(logit.fm02)
+Metrics::accuracy(logit.regr1$R_W, if_else(predict.glm(logit.fm02, logit.regr1, type = "response") > 0.50, 1, 0))
+```
+
+```{r}
+logit.regr2 <- logit.regr1 %>%
+  mutate(
+    R.G = R.G.x - R.G.y,
+    LR.G = LR.G.x - LR.G.y,
+    HR.G = HR.G.x - HR.G.y,
+    LHR.G = LHR.G.x - LHR.G.y,
+    BBP = BBP.x - BBP.y,
+    LBBP = LBBP.x - LBBP.y,
+    KP = KP.x - KP.y,
+    LKP = LKP.x - LKP.y,
+    OPS = OPS.x - OPS.y,
+    LOPS = LOPS.x - LOPS.y,
+    FIP = FIP.x - FIP.y,
+    WHIP = WHIP.x - WHIP.y,
+    K9 = K9.x - K9.y,
+    BB9 = BB9.x - BB9.y,
+    HR9 = HR9.x - HR9.y,
+    BPFIP = BPFIP.x - BPFIP.y,
+    BPWHIP = BPWHIP.x - BPWHIP.y,
+    BPK9 = BPK9.x - BPK9.y,
+    BPBB9 = BPBB9.x - BPBB9.y,
+    BPHR9 = BPHR9.x - BPHR9.y,
+    BPIRS = BPIRS.x - BPIRS.y
+  )
+
+logit.regr2 <- logit.regr2[, c(1, 44:64)]
+```
+
+```{r}
+logit.fm03 <- glm(R_W ~ ., data = logit.regr2, family = binomial(link = "logit"))
+summary(logit.fm03)
+```
+
+```{r}
+logit.fm04 <- glm(R_W ~ HR.G + LHR.G + BBP + KP + LKP + OPS + LOPS + WHIP + K9 + BPIRS, data = logit.regr2, family = binomial(link = "logit"))
+summary(logit.fm04)
+```
+
+```{r}
+AIC(logit.fm04)
+Metrics::accuracy(logit.regr2$R_W, if_else(predict.glm(logit.fm04, logit.regr2, type = "response") > 0.50, 1, 0))
+```
+
+```{r}
+all.data$year <- lubridate::year(all.data$game.date)
+all.data <- mutate(group_by(all.data, year, team.key),
+                   cumwins = cumsum(R_W),
+                   gamenum = row_number(game.date))
+
+all.data %>%
+  filter(team.key == "ANA") %>%
+  select(team.key, gamenum, cumwins)
+```
+
+```{r}
+all.data <- ungroup(all.data)
+
+all.data <- all.data %>%
+  mutate(cumwins = lag(cumwins)) %>%
+  filter(gamenum != 1)
+
+home.data <- filter(all.data, all.data$team.alignment == 1)
+home.data
+```
+
+```{r}
+road.data <- filter(all.data, all.data$team.alignment == 0)
+road.data
+```
+
+```{r}
+win.regr <- left_join(home.data, road.data, by = "game.key")
+
+win.regr
+```
+
+```{r}
+win.regr$moarwins <- if_else((win.regr$cumwins.x - win.regr$cumwins.y) >= 0, 1, 0)
+
+win.regr <- win.regr %>%
+  filter(is.na(moarwins) == F) %>%
+  select(R_W.x, moarwins)
+
+win.regr
+```
+
+```{r}
+logit.fm06 <- glm(R_W.x ~ moarwins, data = win.regr, family = binomial(link = "logit"))
+summary(logit.fm06)
+```
+
+```{r}
+Metrics::accuracy(win.regr$R_W.x, if_else(predict.glm(logit.fm06, win.regr, type = "response") > 0.50, 1, 0))
+```
+
